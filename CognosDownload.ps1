@@ -20,7 +20,7 @@ Param(
     [parameter(Mandatory=$false,HelpMessage="SMTP eMail From")][string]$mailfrom="noreply@yourdomain.com", #--- VARIABLE --- change for your email from address
     [parameter(Mandatory=$false,HelpMessage="File for SMTP eMail Password")][string]$smtppasswordfile="C:\Scripts\emailpw.txt", #--- VARIABLE --- change to a file path for email server password
     [parameter(Mandatory=$false,HelpMessage="Send eMail to")][string]$mailto="technology@yourdomain.com", #--- VARIABLE --- change for your email to address
-    [parameter(Mandatory=$false,HelpMessage="Show progress of report downloading.")][switch]$showprogress #Show counter as file is downloaded.
+    [parameter(Mandatory=$false,HelpMessage="Minimum line count required for CSVs")][int]$requiredlinecount=3 #This should be the ABSOLUTE minimum you expect to see. Think schools.csv for smaller districts.
 )
 
 Add-Type -AssemblyName System.Web
@@ -29,8 +29,8 @@ Add-Type -AssemblyName System.Web
 # In Cognos, do the following:
 # 1. Setup a report with specific name (best without spaces like MyReportName) to run scheduled to save with which format you want then schedule this script to download it.
 # 2. You will need to determine the DSN (database name) for your district
-#    To obtain this you need to log in to the eSchool Cognos site using and view the source code of the overall frameset.
-#    The dsn is displayed in the second <frame> tag like so where the ****** is: src="https://adecognos.arkansas.gov/ibmcognos/cgi-bin/cognos.cgi?dsn=******
+#    The database name is typically YOURSCHOOLNAMEsms (eSchool Plus) or YOURSCHOOLNAMEfms (eFinance)
+#    Click the Login Avatar in the top right and click Sign In. Select esp (eSchool Plus) or efp (eFinance) then find your school database in the list.
 # On computer to download data:
 # 1. After adjusting relevant variables for your district and user account
 # 2. Create folder to store password data for script (default of C:\scripts)
@@ -44,19 +44,6 @@ Add-Type -AssemblyName System.Web
 
 $userdomain = "APSCN"
 #******************* end of variables to change ********************
-#exit codes list
-#1 = Specified path does not exist from parameter
-#2 = Invalid uiAction option specified
-#3 = sURL not found. The script tried to click the report link, but did not get the expected result of already saved report
-#4 = Got HTTP reponse of something other than 200 (OK), likely received a 401 (Unauthorized)
-#9 = General unspecified trap for error
-#10 = CAM_PASSPORT_ERROR detected, check your password
-#11 = AAA-AUT-0011 detected, namespace problem in report
-#12 = Failed to verify CSV format, reverted file if available
-#13 = CSV file didn't download to expected path
-#20 = Unable to query for data source, check the DSN
-#29 = Error during login found in returned data, probably with DSN or path requested
-#30 = Failed to send email to smtp server. (possible no internet.)
 
 # Revisions:
 # 2014-07-23: Brian Johnson: Updated URL string to include dsn parameters necessary for eSchool and re-enabled CredentialCache setting to login
@@ -69,11 +56,11 @@ $userdomain = "APSCN"
 # 2018-04-26: (reverted) scottorgan: Nested folder support Usage examples: CognosDownload.ps1 Clever\Entollments ; CognosDownload.ps1 "Other Reports\MAP Roster"
 # 2018-04-26: (reverted) BPSDJreed: Email notification for expired password
 # 2018-04-24: Craig Millsap: Added recursive nested folders, email notifications, waiting for report to generate.
-
+# 2020-11-19: Craig Millsap: Major overhaul for Cognos11 upgrade. Working eSchool Plus. eFinance is not working yet.
 
 #send mail on failure.
 $mailsubject = "[CognosDownloader]"
-function Send-Email([string]$failurereason) {
+function Send-Email([string]$failurereason,[string]$errormessage) {
     if ($SendMail) {
         $msg = New-Object Net.Mail.MailMessage
         $smtp = New-Object Net.Mail.SmtpClient($smtpserver, $smtpport)
@@ -86,6 +73,9 @@ function Send-Email([string]$failurereason) {
         #Include date so emails don't group in a thread.
         $msg.subject =  $mailsubject + $failurereason + "[$(Get-Date -format MM/dd/y)]" + '[' + $report + ']'
         $msg.Body = "The report " + $report  + " failed to download properly.`r`n"
+        if ($errormessage) {
+            $msg.Body += "$errormessage`r`n"
+        }
         $msg.Body += $url
         
         try {
@@ -95,6 +85,16 @@ function Send-Email([string]$failurereason) {
             exit 30
         }
     }
+}
+
+function Reset-DownloadedFile([string]$fullfilepath) {
+    $PrevOldFileExists = Test-Path ($fullfilepath + ".old")
+    if ($PrevOldFileExists -eq $True) {
+        Write-Host("Deleting old $report...") -ForeGroundColor Yellow
+        Remove-Item -Path $fullfilepath -Force
+        Rename-Item -Path ($fullfilepath + ".old") -newname ($fullfilepath)
+    }
+    Write-Host("Failed CSV verify. Reversing old $report...") -ForeGroundColor Red
 }
 
 # Cognos ui action to perform 'run' or 'view'
@@ -127,20 +127,20 @@ if ($ReportStudio) {
 #Script to create a password file for Cognos download Directory
 #This script MUST BE RAN LOCALLY to work properly! Run it on the same machine doing the cognos downloads, this does not work remotely!
 
-If ((Test-Path ($passwordfile))) {
+if ((Test-Path ($passwordfile))) {
     $password = Get-Content $passwordfile | ConvertTo-SecureString
-}
-Else {
+} else {
     Write-Host("Password file does not exist! [$passwordfile]. Please enter a password to be saved on this computer for scripts") -ForeGroundColor Yellow
     Read-Host "Enter Password" -AsSecureString |  ConvertFrom-SecureString | Out-File $passwordfile
     $password = Get-Content $passwordfile | ConvertTo-SecureString
 }
 
+$creds = New-Object System.Management.Automation.PSCredential $username,$password
+
 If ($smtpauth) {
-    If ((Test-Path ($smtppasswordfile))) {
+    if ((Test-Path ($smtppasswordfile))) {
         $smtppassword = Get-Content $smtppasswordfile | ConvertTo-SecureString
-    }
-    Else {
+    } else {
         Write-Host("SMTP Password file does not exist! [$smtppasswordfile]. Please enter a password to be saved on this computer for emails") -ForeGroundColor Yellow
         Read-Host "Enter Password" -AsSecureString |  ConvertFrom-SecureString | Out-File $smtppasswordfile
         $mailfrompassword = Get-Content $smtppasswordfile | ConvertTo-SecureString
@@ -206,7 +206,7 @@ if ($uiAction -notmatch "run" -and $uiAction -notmatch "view") {
 trap { #general trap for errors
     $trap = $_
     Write-Host $trap.Exception.Message
-    Send-Email("[Failure][Generic]")
+    Send-Email("[Failure][Generic]",$($trap.Exception.Message))
     exit 9
 }
 
@@ -219,8 +219,6 @@ If ($FileExists -eq $True) {
     #replace datetime for if-modified-since header from existing file
     $filetimestamp = (Get-Item $fullfilepath).LastWriteTime
 }
-
-$creds = New-Object System.Management.Automation.PSCredential $username,$password
 
 #submit login.
 Write-Host "Attempting authentication..." -ForegroundColor Yellow
@@ -322,48 +320,39 @@ Invoke-WebRequest -Uri "$($baseURL)$($fileURLString)" -WebSession $session -OutF
 # check file for proper format if csv
 if ($extension -eq "csv") {
     $FileExists = Test-Path $fullfilepath
-    If ($FileExists -eq $False) {
+    if ($FileExists -eq $False) {
         Write-Host("Does not exist:" + $fullfilepath)
-        Send-Email("[Failure][Output]")
+        Send-Email("[Failure][Output]","CSV Did not download to expected path.")
         exit 13 #CSV file didn't download to expected path
     }
-    #line counts to keep track of lines
-    $lcount = 0
-    $badlcount = 0
+    
+    try {
+        $filecontents = Import-CSV $fullfilepath
 
-    for(;;) {
-        $reader = [System.IO.File]::OpenText($fullfilepath)
-        $l = $reader.ReadLine()
-        if ($l -eq $null) { break }
-        if ($l -match '^\w,*')
-        {
-            $lcount++
+        $headercount = ($filecontents | Get-Member | Where-Object { $PSItem.MemberType -eq 'NoteProperty' } | Select-Object -ExpandProperty Name | Measure-Object).Count
+        if ($headercount -gt 1) {
+            Write-Host("Passed CSV header check with $headercount headers...") -ForeGroundColor Yellow
+        } else {
+            Write-Host("Failed CSV header check with only $headercount headers...") -ForeGroundColor Yellow
+            Reset-DownloadedFile($fullfilepath)
+            Send-Email("[Failure][Verify]","Only $headercount header found in CSV.")
+            exit 1
         }
-        else
-        {
-            $badlcount++
+
+        $linecount = ($filecontents | Measure-Object).Count
+        if ($linecount -ge $requiredlinecount) { #Think schools.csv for smaller districts with only 3 campuses.
+            Write-Host("Passed CSV line count with $linecount lines...") -ForeGroundColor Yellow
+        } else {
+            Write-Host("Failed CSV line count with only $linecount lines...") -ForeGroundColor Yellow
+            Reset-DownloadedFile($fullfilepath)
+            Send-Email("[Failure][Verify]","Only $linecount lines found in CSV.")
+            exit 1
         }
-        #exit based on whether number of lines passed
-        if($lcount -eq 5)
-        {
-            Write-Host("Passed CSV $lcount lines...") -ForeGroundColor Yellow
-            $reader.Close()
-            break
-        }
-        if($badlcount -gt 0)
-        {
-            #bad file revert file
-            $PrevOldFileExists = Test-Path ($fullfilepath + ".old")
-            If ($PrevOldFileExists -eq $True) {
-                Write-Host("Deleting old $report...") -ForeGroundColor Yellow
-                Rename-Item -Path $fullfilepath -newname ($fullfilepath)
-            }
-            Write-Host("Failed CSV verify. Reversing old $report...") -ForeGroundColor Red
-            $reader.Close()
-            Send-Email("[Failure][Verify]")
-            exit 12 #reverted file format
-        }
-        $reader.Close()
+
+    } catch {
+        Send-Email("[Failure][Verify]")
+        Reset-DownloadedFile($fullfilepath)
+        exit 12 #reverted file format
     }
 }
 
