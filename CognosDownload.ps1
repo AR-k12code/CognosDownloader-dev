@@ -20,7 +20,8 @@ Param(
     [parameter(Mandatory=$false,HelpMessage="SMTP eMail From")][string]$mailfrom="noreply@yourdomain.com", #--- VARIABLE --- change for your email from address
     [parameter(Mandatory=$false,HelpMessage="File for SMTP eMail Password")][string]$smtppasswordfile="C:\Scripts\emailpw.txt", #--- VARIABLE --- change to a file path for email server password
     [parameter(Mandatory=$false,HelpMessage="Send eMail to")][string]$mailto="technology@yourdomain.com", #--- VARIABLE --- change for your email to address
-    [parameter(Mandatory=$false,HelpMessage="Minimum line count required for CSVs")][int]$requiredlinecount=3 #This should be the ABSOLUTE minimum you expect to see. Think schools.csv for smaller districts.
+    [parameter(Mandatory=$false,HelpMessage="Minimum line count required for CSVs")][int]$requiredlinecount=3, #This should be the ABSOLUTE minimum you expect to see. Think schools.csv for smaller districts.
+    [parameter(Mandatory=$false)][switch]$showURL #print the url used to download report.
 )
 
 Add-Type -AssemblyName System.Web
@@ -189,9 +190,9 @@ if ($reportparams.Length -gt 0) {
 $camid = "CAMID(%22$($camName)%3aa%3a$($camuser)%22)%2f$($cognosfolder)$($reporttype)%5b%40name%3d%27$($report)%27%5d"
 
 if ($uiAction -match "run") { #run the report live for the data
-    $url = "$($baseURL)/$($cWebDir)/bi/v1/disp?$($dsnparam)=$($dsnname)&CAM_action=logonAs&CAMNamespace=$($camName)&CAMUsername=$($username)&CAMPassword=$($password)&b_action=cognosViewer&ui.action=$($uiAction)&ui.object=$($camid)&ui.name=$($report)&run.outputFormat=$($fileformat)&run.prompt=false$($reportparams)&cv.responseFormat=data"
+    $url = "$($baseURL)/$($cWebDir)/bi/v1/disp?b_action=cognosViewer&ui.action=$($uiAction)&ui.object=$($camid)&&run.outputFormat=$($fileformat)&run.prompt=false$($reportparams)&cv.responseFormat=data"
 } elseif ($uiAction -match "view") { #view a saved version of the report data
-    $url = "$($baseURL)/$($cWebDir)/bi/v1/disp?$($dsnparam)=$($dsnname)&CAM_action=logonAs&CAMNamespace=$($camName)&CAMUsername=$($username)&CAMPassword=$($password)&b_action=cognosViewer&ui.action=$($uiAction)&ui.object=defaultOutput($($camid))&ui.name=$($report)&run.prompt=false$($reportparams)&cv.responseFormat=data"
+    $url = "$($baseURL)/$($cWebDir)/bi/v1/disp?b_action=cognosViewer&ui.action=$($uiAction)&ui.object=defaultOutput($($camid))&run.prompt=false$($reportparams)&cv.responseFormat=data"
 }
 
 if ($uiAction -notmatch "run" -and $uiAction -notmatch "view") {
@@ -200,6 +201,9 @@ if ($uiAction -notmatch "run" -and $uiAction -notmatch "view") {
     exit 2 #option not implemented
 }
 
+if ($showURL) {
+    Write-Host "Verbose: Request sent to:", $([System.Web.HttpUtility]::UrlDecode("$url"))
+}
 #Write-Host $url
 #Write-Host $([System.Web.HttpUtility]::UrlDecode($url))
 
@@ -231,8 +235,8 @@ $response2 = Invoke-WebRequest -Uri "$($baseURL)/$($cWebDir)/bi/v1/login" -WebSe
 -ContentType "application/json; charset=UTF-8" `
 -Body "{`"parameters`":[{`"name`":`"h_CAM_action`",`"value`":`"logonAs`"},{`"name`":`"CAMNamespace`",`"value`":`"$camName`"},{`"name`":`"$dsnparam`",`"value`":`"$dsnname`"}]}"
 
-$response = Invoke-WebRequest -Uri $url -WebSession $session
-$HTMLDataString = $response.Content
+$response3 = Invoke-WebRequest -Uri $url -WebSession $session
+$HTMLDataString = $response3.Content
 
 Write-Host("Downloaded HTML to retrieve report url.") -ForeGroundColor Yellow
 
@@ -269,9 +273,9 @@ try { #Attempt to convert response to XML. If true the report is still processin
                 $poststring += 'ui.action=wait&'
                 $poststring += 'cv.responseFormat=data&'
                 
-                $response = Invoke-WebRequest -Uri "$($baseURL)/$($cWebDir)/bi/v1/disp" -WebSession $session -Method 'POST' -Body $poststring -ContentType "application/x-www-form-urlencoded"
+                $response3 = Invoke-WebRequest -Uri "$($baseURL)/$($cWebDir)/bi/v1/disp" -WebSession $session -Method 'POST' -Body $poststring -ContentType "application/x-www-form-urlencoded"
 
-                $HTMLDataString = $response.Content
+                $HTMLDataString = $response3.Content
                 Write-Host($HTMLDataString)
                 
                 try {
@@ -312,7 +316,7 @@ If ($PrevFileExists -eq $True) {
     Rename-Item -Path $fullfilepath -newname ($fullfilepath + ".old")
 }
 
-$urlMatch = $regex.Matches($response.Content)
+$urlMatch = $regex.Matches($response3.Content)
 $fileURLString = $urlMatch[0].Value.Replace("var sURL = '", "").Replace("'", "")
 
 Invoke-WebRequest -Uri "$($baseURL)$($fileURLString)" -WebSession $session -OutFile $fullfilepath
