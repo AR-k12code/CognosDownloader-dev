@@ -1,53 +1,99 @@
+#Get-Help .\CognosDownload.ps1
+#Get-Help .\CognosDownload.ps1 -Examples
+
+<#
+  .SYNOPSIS
+  This script is used to download reports from the Arkansas Cognos 11 using your SSO credentails.
+
+  .DESCRIPTION
+  CognosDownload.ps1 invoked with the proper parameters will download a report in the desired format.
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report students -espdsn gentrysms
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report sections -espdsn gentrysms -reportparams "p_year=2021"
+  This provides a simple solution to answer a single page prompt.
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report sections -espdsn gentrysms -XMLParameters "CustomPromptAnswers.xml"
+  This provides for answering more complex and multipage prompt pages. Script will automatically use an XML file named the the Report ID with an extension of .xml
+  
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report activities -cognosfolder "_Share Temporarily Between Districts/Gentry/automation" -espdsn gentrysms -TeamContent
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report "APSCN Virtual AR Student File" -espdsn gentrysms -savepath .\ -ShowReportDetails -TeamContent -cognosfolder "Demographics/Demographic Download Files" -XMLParameters i4C884862DFD8470ABFF2571CB47F01EA.xml -extension pdf
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report students -espdsn gentrysms -SendMail -mailto "technology@gentrypioneers.com" -mailfrom noreply@gentrypioneers.com
+
+  .EXAMPLE
+  PS> .\CognosDownload.ps1 -username 0401cmillsap -report students -espdsn gentrysms -ShowReportDetails -SkipDownloadingFile
+
+  .PARAMETER ShowReportDetails
+  Print details about the report including Title, Owner, Owner Email, Location in Cognos, and the ID.
+  
+  .PARAMETER SkipDownloadingFile
+  All other steps except actually downloading the final file to the specified save path.
+
+
+#>
+
 Param(
-    [parameter(Position=0,Mandatory=$true,HelpMessage="Give the name of the report you want to download.")][string]$report,
-    [parameter(Position=1,Mandatory=$false,HelpMessage="Give a specific folder to download the report into.")][string]$savepath="C:\scripts", #--- VARIABLE --- change to a path you want to save files
-    [parameter(Position=2,Mandatory=$false,HelpMessage="Extension to save onto the report name.")][string]$extension="CSV", #--- VARIABLE --- file extension to save data in csv or xlsx
-    [parameter(Mandatory=$false,HelpMessage="eSchool SSO username to use.")][string]$username="0000name", #--- VARIABLE --- SSO username
-    [parameter(Mandatory=$false,HelpMessage="File for ADE SSO Password")][string]$passwordfile="C:\Scripts\apscnpw.txt", #--- VARIABLE --- change to a file path for SSO password
-    [parameter(Mandatory=$false,HelpMessage="eSchool DSN location.")][string]$espdsn="schoolsms", #--- VARIABLE --- eSchool DSN for your district
-    [parameter(Mandatory=$false,HelpMessage="eFinance username to use.")][string]$efpuser="yourefinanceusername", #--- VARIABLE --- eFinance username
-    [parameter(Mandatory=$false,HelpMessage="eFinance DSN location.")][string]$efpdsn="schoolfms", #--- VARIABLE --- eFinance DSN for your district
-    [parameter(Mandatory=$false,HelpMessage="Cognos Folder Structure.")][string]$cognosfolder="My Folders", #--- VARIABLE --- Cognos Folder "Folder 1/Sub Folder 2/Sub Folder 3" NO TRAILING SLASH
-    [parameter(Mandatory=$false,HelpMessage="Report Parameters")][string]$reportparams="", #--- VARIABLE --- Example:"p_year=2017&p_school=Middle School" If a report requires parameters you can specifiy them here.
-    [parameter(Mandatory=$false,HelpMessage="Report Wait Timeout")][int]$reportwait=5, #--- VARIABLE --- If the report is not ready immediately wait X seconds and try again. Will try 6 times only!
-    [parameter(Mandatory=$false,HelpMessage="Use switch for Report Studio created report. Otherwise it will be a Query Studio report")][switch]$ReportStudio,
-    [parameter(Mandatory=$false,HelpMessage="Get the report from eFinance.")][switch]$eFinance,
-    [parameter(Mandatory=$false,HelpMessage="Run a live version instead of just getting a saved version.")][switch]$RunReport,
-    [parameter(Mandatory=$false,HelpMessage="Send an email on failure.")][switch]$SendMail,
-    [parameter(Mandatory=$false,HelpMessage="SMTP Auth Required.")][switch]$smtpauth,
-    [parameter(Mandatory=$false,HelpMessage="SMTP Server")][string]$smtpserver="smtp-relay.gmail.com", #--- VARIABLE --- change for your email server
-    [parameter(Mandatory=$false,HelpMessage="SMTP Server Port")][int]$smtpport="587", #--- VARIABLE --- change for your email server
-    [parameter(Mandatory=$false,HelpMessage="SMTP eMail From")][string]$mailfrom="noreply@yourdomain.com", #--- VARIABLE --- change for your email from address
-    [parameter(Mandatory=$false,HelpMessage="File for SMTP eMail Password")][string]$smtppasswordfile="C:\Scripts\emailpw.txt", #--- VARIABLE --- change to a file path for email server password
-    [parameter(Mandatory=$false,HelpMessage="Send eMail to")][string]$mailto="technology@yourdomain.com", #--- VARIABLE --- change for your email to address
-    [parameter(Mandatory=$false,HelpMessage="Minimum line count required for CSVs")][int]$requiredlinecount=3, #This should be the ABSOLUTE minimum you expect to see. Think schools.csv for smaller districts.
-    [parameter(Mandatory=$false)][switch]$ShowReportDetails, #Print report details to terminal.
-    [parameter(Mandatory=$false)][switch]$SkipDownloadingFile, #Do not actually download the file.
-    [parameter(Mandatory=$false)][switch]$dev, #print the url used to download report.
-    [parameter(Mandatory=$false)][switch]$TeamContent #Report is in the Team Content folder.
+    [parameter(Mandatory=$true,HelpMessage="Give the name of the report you want to download.")]
+        [string]$report,
+    [parameter(Mandatory=$false,HelpMessage="Give a specific folder to download the report into.")]
+        [string]$savepath="C:\scripts",
+    [parameter(Position=2,Mandatory=$false,HelpMessage="Format you want to download report as.")]
+        [string]$extension="CSV",
+    [parameter(Mandatory=$false,HelpMessage="eSchool SSO username to use.")]
+        [string]$username="0000name", #YOU SHOULD NOT MODIFY THIS. USE THE PARAMETER. FOR BACKWARDS COMPATIBILTY IT IS NOT REQUIRED YET BUT WILL BE IN THE FUTURE.
+    [parameter(Mandatory=$false,HelpMessage="File for ADE SSO Password")]
+        [string]$passwordfile="C:\Scripts\apscnpw.txt", # Override where the script should find the password for the user specified with -username.
+    [parameter(Mandatory=$false,HelpMessage="eSchool DSN location.")]
+        [string]$espdsn="schoolsms", #YOU SHOULD NOT MODIFY THIS. USER THE PARAMETER. FOR BACKWARDS COMPATIBILITY IT IS NOT REQUIRED BUT SHOULD BE IN THE FUTURE.
+    [parameter(Mandatory=$false,HelpMessage="eFinance username to use.")]
+        [string]$efpuser="yourefinanceusername", #YOU SHOULD NOT MODIFY THIS. USE THE PARAMETER. FOR BACKWARDS COMPATIBILTY IT IS NOT REQUIRED BUT SHOULD BE IN THE FUTURE.
+    [parameter(Mandatory=$false,HelpMessage="eFinance DSN location.")]
+        [string]$efpdsn="schoolfms", #YOU SHOULD NOT MODIFY THIS. USE THE PARAMETER. FOR BACKWARDS COMPATIBILTY IT IS NOT REQUIRED BUT SHOULD BE IN THE FUTURE.
+    [parameter(Mandatory=$false,HelpMessage="Cognos Folder Structure.")]
+        [string]$cognosfolder="My Folders", #Cognos Folder "Folder 1/Sub Folder 2/Sub Folder 3" NO TRAILING SLASH
+    [parameter(Mandatory=$false,HelpMessage="Report Parameters")]
+        [string]$reportparams="", #If a report requires parameters you can specifiy them here. Example:"p_year=2017&p_school=Middle School"
+    [parameter(Mandatory=$false,HelpMessage="Get the report from eFinance.")]
+        [switch]$eFinance,
+    [parameter(Mandatory=$false,HelpMessage="Send an email on failure.")]
+        [switch]$SendMail,
+    [parameter(Mandatory=$false,HelpMessage="SMTP Auth Required.")]
+        [switch]$smtpauth,
+    [parameter(Mandatory=$false,HelpMessage="SMTP Server")]
+        [string]$smtpserver="smtp-relay.gmail.com", #--- VARIABLE --- change for your email server
+    [parameter(Mandatory=$false,HelpMessage="SMTP Server Port")]
+        [int]$smtpport="587", #--- VARIABLE --- change for your email server
+    [parameter(Mandatory=$false,HelpMessage="SMTP eMail From")]
+        [string]$mailfrom="noreply@yourdomain.com", #--- VARIABLE --- change for your email from address
+    [parameter(Mandatory=$false,HelpMessage="File for SMTP eMail Password")]
+        [string]$smtppasswordfile="C:\Scripts\emailpw.txt", #--- VARIABLE --- change to a file path for email server password
+    [parameter(Mandatory=$false,HelpMessage="Send eMail to")]
+        [string]$mailto="technology@yourdomain.com", #--- VARIABLE --- change for your email to address
+    [parameter(Mandatory=$false,HelpMessage="Minimum line count required for CSVs")]
+        [int]$requiredlinecount=3, #This should be the ABSOLUTE minimum you expect to see. Think schools.csv for smaller districts.
+    [parameter(Mandatory=$false)]
+        [switch]$ShowReportDetails, #Print report details to terminal.
+    [parameter(Mandatory=$false)]
+        [switch]$SkipDownloadingFile, #Do not actually download the file.
+    [parameter(Mandatory=$false)]
+        [switch]$dev, #use the development URL dev.adecognos.arkansas.gov
+    [parameter(Mandatory=$false)]
+        [switch]$TeamContent, #Report is in the Team Content folder. You will also need to have specified the -cognosfolder parameter with the path.
+    [parameter(Mandatory=$false)]
+        [string]$XMLParameters #Path to XML for answering prompts.
 )
 
 Add-Type -AssemblyName System.Web
 
-# The above parameters can be called directly from powershell switches
-# In Cognos, do the following:
-# 1. Setup a report with specific name (best without spaces like MyReportName) to run scheduled to save with which format you want then schedule this script to download it.
-# 2. You will need to determine the DSN (database name) for your district
-#    The database name is typically YOURSCHOOLNAMEsms (eSchool Plus) or YOURSCHOOLNAMEfms (eFinance)
-#    Click the Login Avatar in the top right and click Sign In. Select esp (eSchool Plus) or efp (eFinance) then find your school database in the list.
-# On computer to download data:
-# 1. Create folder to store script and password data for script (default of C:\scripts)
-# 2. Run from command line or batch script:
-#    powershell.exe -executionpolicy bypass -file C:\Scripts\CognosDownload.ps1 -username 0000username -report MyReportName -cognosfolder "subfolder" -savepath "c:\scripts\downloads" -espdns schoolsms 
-# 
-# For eFinance: (coming soon)
-
-#Example for the Team Content folder:
-#.\CognosDownload.ps1 -username 0403cmillsap -report activities -cognosfolder "_Share Temporarily Between Districts/Gentry/automation" -espdsn gentrysms -TeamContent
-#https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/wsil/path/Team%20Content%2FStudent%20Management%20System%2F_Share%20Temporarily%20Between%20Districts%2FGentry%2Fautomation
-#/content/folder[@name='Student Management System']/folder[@name='_Share Temporarily Between Districts']/folder[@name='Gentry']/folder[@name='automation']/query[@name='activities']
-#https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/atom/path/Team Content/Student Management System/_Share Temporarily Between Districts/Gentry/automation/activities
-#CAMID("esp:a:0403cmillsap")/folder[@name='My Folders']/folder[@name='automation']/query[@name='activities']
+#powershell.exe -executionpolicy bypass -file C:\Scripts\CognosDownload.ps1 -username 0000username -report MyReportName -cognosfolder "subfolder" -savepath "c:\scripts\downloads" -espdns schoolsms 
 
 # When the password expires, just delete the specific file (c:\scripts\apscnpw.txt) and run the script to re-create.
 
@@ -64,6 +110,12 @@ Add-Type -AssemblyName System.Web
 # 2018-04-24: Craig Millsap: Added recursive nested folders, email notifications, waiting for report to generate.
 # 2020-11-19: Craig Millsap: Major overhaul for Cognos11 upgrade. Working eSchool Plus. eFinance is not working yet.
 # 2020-12-01: Craig Millsap: Migrated over to using Invoke-RestMethod and better validation. Huge thanks to Jon Penn for the API documentation.
+
+#Example for the Team Content folder:
+#https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/wsil/path/Team%20Content%2FStudent%20Management%20System%2F_Share%20Temporarily%20Between%20Districts%2FGentry%2Fautomation
+#/content/folder[@name='Student Management System']/folder[@name='_Share Temporarily Between Districts']/folder[@name='Gentry']/folder[@name='automation']/query[@name='activities']
+#https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/atom/path/Team Content/Student Management System/_Share Temporarily Between Districts/Gentry/automation/activities
+#CAMID("esp:a:0401cmillsap")/folder[@name='My Folders']/folder[@name='automation']/query[@name='activities']
 
 #send mail on failure.
 $mailsubject = "[CognosDownloader]"
@@ -104,7 +156,7 @@ function Reset-DownloadedFile([string]$fullfilepath) {
     Write-Host "Reversing old $($report)." -ForeGroundColor Red
 }
 
-# server location for Cognos
+# URL for Cognos
 if ($dev) {
     $baseURL = "https://dev.adecognos.arkansas.gov"
 } else {
@@ -271,22 +323,112 @@ if (-Not($SkipDownloadingFile)) {
             }
         }
 
-        Write-Host -NoNewline "Downloading Report to ""$($fullfilepath)""... " -ForegroundColor Yellow
-
-        $downloadURL = "$($baseURL)/ibmcognos/bi/v1/disp/rds/outputFormat/path/$($cognosfolder)/$($report)/$($validExtension)?v=3"
+        $downloadURL = "$($baseURL)/ibmcognos/bi/v1/disp/rds/outputFormat/path/$($cognosfolder)/$($report)/$($validExtension)?v=3&async=MANUAL&useRelativeURL=true"
         
         #https://www.ibm.com/support/knowledgecenter/SSEP7J_11.1.0/com.ibm.swg.ba.cognos.ca_dg_cms.doc/c_dg_raas_run_rep_prmpt.html#dg_raas_run_rep_prmpt
         #I think this should be a path as well to the xmlData so you can save it to a text file and pull in when needed to run.
         #Maybe if the prompts return a Test-Path $True then import and use the xmlData field instead. This should allow for more complex prompts.
-        if ($reportparams -ne "") {
+
+        if ($reportparams -ne '') {
             $downloadURL = $downloadURL + '&' + $reportparams
         }
-        
-        $response6 = Invoke-RestMethod -Uri $downloadURL -WebSession $session -OutFile $fullfilepath
 
+        try {
+            if ($XMLParameters -ne '') {
+                if (Test-Path "$XMLParameters") {
+                    Write-Host "Info: Using """$XMLParameters""" in current directory for report prompts." -ForegroundColor Yellow
+                    $reportParamXML = (Get-Content "$XMLParameters") -replace ' xmlns:rds="http://www.ibm.com/xmlns/prod/cognos/rds/types/201310"','' -replace 'rds:','' -replace '<','%3C' -replace '>','%3E' -replace '/','%2F'
+                    $promptXML = [xml]((Get-Content "$XMLParameters") -replace ' xmlns:rds="http://www.ibm.com/xmlns/prod/cognos/rds/types/201310"','' -replace 'rds:','')
+                    $downloadURL = $downloadURL + '&xmlData=' + $reportParamXML
+                }
+            } elseif (Test-Path "$($reportID).xml") {
+                Write-Host "Info: Found ""$($reportID).xml"" in current directory. Using saved report prompts." -ForegroundColor Yellow
+                $reportParamXML = (Get-Content "$($reportID).xml") -replace ' xmlns:rds="http://www.ibm.com/xmlns/prod/cognos/rds/types/201310"','' -replace 'rds:','' -replace '<','%3C' -replace '>','%3E' -replace '/','%2F'
+                $promptXML = [xml]((Get-Content "$($reportID).xml") -replace ' xmlns:rds="http://www.ibm.com/xmlns/prod/cognos/rds/types/201310"','' -replace 'rds:','')
+                $downloadURL = $downloadURL + '&xmlData=' + $reportParamXML
+            }
+
+            if ($promptXML) {
+                Write-Host "Info: You should be able to customize your prompts by changing any of the following fields and using the -reportparams parameter."
+                $promptXML.promptAnswers.promptValues | ForEach-Object {
+                    $promptname = $PSItem.name
+                    $PSItem.values.item.SimplePValue.useValue | ForEach-Object {
+                        Write-Host ("&p_$($promptname)=$($PSItem)").Trim() -NoNewline
+                    }
+                }
+                Write-Host "`n"
+            }
+
+        } catch {}
+
+        Write-Host -NoNewline "Downloading Report to ""$($fullfilepath)""... " -ForegroundColor Yellow
+        $response5 = Invoke-RestMethod -Uri $downloadURL -WebSession $session
+
+        if ($response5.receipt.status -eq "working") {
+            $response6 = Invoke-RestMethod -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/sessionOutput/conversationID/$($response5.receipt.conversationID)?v=3&async=MANUAL" -WebSession $session
+
+            if (-Not($response6.error)) {
+                #we did not get a prompt page or an error.
+                $response6 | Out-File $fullfilepath
+            } else {
+                #we got an error or a prompts page.
+                $errorResponse = $response6.error
+                Write-Host "Error detected in downloaded file. $($errorResponse.message)" -ForegroundColor Red
+
+                if ($errorResponse.promptID) {
+                    $promptid = $errorResponse.promptID
+                    #Expecting prompts. Lets see if we can find them.
+                    $promptsConversation = Invoke-RestMethod -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/reportPrompts/report/$($reportID)?v=3&async=MANUAL" -WebSession $session
+                    $prompts = Invoke-WebRequest -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/sessionOutput/conversationID/$($promptsConversation.receipt.conversationID)?v=3&async=MANUAL" -WebSession $session
+                    Write-Host "`nError: This report expects the following prompts:" -ForegroundColor RED
+
+                    Select-Xml -Xml ([xml]$prompts.Content) -XPath '//x:pname' -Namespace @{ x = "http://www.ibm.com/xmlns/prod/cognos/layoutData/201310" } | ForEach-Object {
+                        
+                        $promptname = $PSItem.Node.'#text'
+                        Write-Host "p_$($promptname)="
+
+                        if (Select-Xml -Xml ([xml]$prompts.Content) -XPath '//x:p_value' -Namespace @{ x = "http://www.ibm.com/xmlns/prod/cognos/layoutData/200904" }) {
+                            $promptvalues = Select-Xml -Xml ([xml]$prompts.Content) -XPath '//x:p_value' -Namespace @{ x = "http://www.ibm.com/xmlns/prod/cognos/layoutData/200904" } | Where-Object { $PSItem.Node.pname -eq $promptname }
+                            if ($promptvalues.Node.selOptions.sval) {
+                                $promptvalues.Node.selOptions.sval
+                            }
+                        }
+
+                    }
+
+                    Write-Host "`nInfo: For complex prompts you can submit your prompts at the following URL. You must have a browser window open and signed into Cognos for this URL to work." -ForegroundColor Yellow
+                    Write-Host ("$($baseURL)" + ([uri]$errorResponse.url).PathAndQuery) + "`n"
+
+                    $promptAnswers = Read-Host "Ready to download the prompt answers to reuse for later (Y/N)"
+                        #Read-Host "Ready to download the prompt answers to reuse for later (Y/N)"
+
+                    if (@('y','Y','yes') -contains $promptAnswers) {
+                        Write-Host "Info: Saving Report Responses to $($reportID).xml to be used later." -ForegroundColor Yellow
+                        Invoke-WebRequest -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/promptAnswers/conversationID/$($promptid)?v=3&async=OFF" -WebSession $session -OutFile "$($reportID).xml"
+                        Write-Host "Info: You will need to rerun this script to download the report using the saved prompts." -ForegroundColor Yellow
+
+                        $promptXML = [xml]((Get-Content "$($reportID).xml") -replace ' xmlns:rds="http://www.ibm.com/xmlns/prod/cognos/rds/types/201310"','' -replace 'rds:','')
+                        $promptXML.promptAnswers.promptValues | ForEach-Object {
+                            $promptname = $PSItem.name
+                            $PSItem.values.item.SimplePValue.useValue | ForEach-Object {
+                                Write-Host "&p_$($promptname)=$($PSItem)"
+                            }
+                        }
+                        
+                    }
+
+                }
+
+                #Move-Item -Path "$fullfilepath" -Destination "$($fullfilepath).error" -Force
+                Reset-DownloadedFile($fullfilepath)
+                exit(6)
+            }
+        }
+        
         Write-Host "Success." -ForegroundColor Yellow
     } catch {
-        Write-Host "Failed to download file." -ForegroundColor Red
+        $b = $_
+        Write-Host "Failed to download file. $($_)" -ForegroundColor Red
         exit(6)
     }
 } else {
@@ -295,30 +437,6 @@ if (-Not($SkipDownloadingFile)) {
     exit(0)
 }
 
-#Verify we didn't download an error page.
-try {
-    if (([xml](Get-Content $fullfilepath)).error.message) {
-
-        $errorMessage = [xml](Get-Content $fullfilepath)
-        Write-Host "Error detected in downloaded file. $($errorMessage.error.message)" -ForegroundColor Red
-
-        if ($errorMessage.error.promptID) {
-            $True
-            #$a = Invoke-WebRequest -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/reportPrompts/report/$(reportID)" -WebSession $session -SkipHttpErrorCheck -MaximumRedirection 15 -UseBasicParsing -ErrorAction SilentlyContinue -DisableKeepAlive
-            #$a = Invoke-WebRequest -Uri "https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/sessionOutput/conversationID/$($errorMessage.error.PromptID)" -WebSession $session
-            #$a = Invoke-RestMethod -Uri "$(baseURL)/ibmcognos/bi/v1/disp/rds/promptAnswers/conversationID/$($errorMessage.error.PromptID)" -WebSession $session
-            #https://dev.adecognos.arkansas.gov/ibmcognos/bi/v1/disp/rds/sessionOutput/conversationID/iF684711856D041519349E983F76D7E79
-            #$urlPath = ([System.Uri]($errorMessage.error.url)).PathAndQuery
-            #$a = Invoke-RestMethod -Uri "$($baseURL)$($urlPath)" -WebSession $session
-        }
-
-        Move-Item -Path "$fullfilepath" -Destination "$($fullfilepath).error" -Force
-        Reset-DownloadedFile($fullfilepath)
-        exit(6)
-    }
-} catch {
-
-}
 
 # check file for proper format if csv
 if ($extension -eq "csv") {
